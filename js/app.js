@@ -1,4 +1,4 @@
-/* v4.1 — Online chess (Firebase) with better UX and turn stability */
+/* v4.1.1 — Online chess (Firebase) with atomic color assignment */
 import { ensureAuth, makeRoomId, createRoom, joinRoom, leaveRoom, listenRoom, pushState } from './firebaseInit.js';
 
 // DOM refs
@@ -49,7 +49,6 @@ let lastMove = null;
 let history = [];
 let redoStack = [];
 let movesNotation = [];
-let flipped = false;
 let castleRights = {K:true, Q:true, k:true, q:true};
 let epTarget = null;
 
@@ -104,7 +103,6 @@ function updateTurnInfo(){
     if (role==='spectator') setStatus('Vous regardez la partie (spectateur).', 'wait');
     else if ((whiteToMove && role==='white') || (!whiteToMove && role==='black')) setStatus('🎯 Votre tour — jouez un coup.', 'me');
     else setStatus('⌛ Tour de l’adversaire…', 'wait');
-    // auto flip
     document.getElementById('boardOuter').classList.toggle('flipped', role==='black');
   } else {
     setStatus('Mode local : 2 joueurs sur le même écran.', 'ok');
@@ -210,7 +208,7 @@ function isInCheck(white){
 function markCheckSquares(){
   const wk=findKing(true), bk=findKing(false);
   if (wk && isInCheck(true)) squareEl(wk.r,wk.c)?.classList.add('inCheck');
-  if (bk && isInCheck(false)) squareEl(bk.r,wk?.c)?.classList.add('inCheck');
+  if (bk && isInCheck(false)) squareEl(bk.r,bk.c)?.classList.add('inCheck');
 }
 
 function genLegalMoves(r,c){
@@ -345,10 +343,10 @@ function applyServerState(state){
   whiteToMove = state.whiteToMove;
   lastMove = state.lastMove || null;
   movesNotation = state.movesNotation || [];
-  castleRights = state.castleRights || {K:true,Q:true,k:true,q:true};
+  castleRights = state.castleRights || {K:true, Q:true, k:true, q:true};
   epTarget = state.epTarget || null;
   selected=null; legalTargets=[];
-  boardOuter.classList.toggle('flipped', role==='black');
+  document.getElementById('boardOuter').classList.toggle('flipped', role==='black');
   buildBoard(); clearHints(); renderMoves(); updateTurnInfo();
 }
 
@@ -357,9 +355,7 @@ function syncToServer(){
   if (mode!=='online' || !roomId) return;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(()=>{
-    pushState(roomId, {
-      S, whiteToMove, lastMove, movesNotation, castleRights, epTarget
-    });
+    pushState(roomId, { S, whiteToMove, lastMove, movesNotation, castleRights, epTarget });
   }, 30);
 }
 
@@ -460,7 +456,7 @@ resetBtn.addEventListener('click', ()=>{
 });
 
 flipBtn.addEventListener('click', ()=>{
-  boardOuter.classList.toggle('flipped');
+  document.getElementById('boardOuter').classList.toggle('flipped');
 });
 
 exportBtn.addEventListener('click', ()=>{
@@ -476,7 +472,7 @@ exportBtn.addEventListener('click', ()=>{
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 
-// Local promotion UI (online=auto-queen)
+// Local promotion (online = auto-queen)
 function askPromotion(white){
   return new Promise(resolve => {
     const mask=document.createElement('div'); mask.className='promoMask';
@@ -508,15 +504,15 @@ doMove = function(from,to,opts={record:true,noUI:false}){
   }
 };
 
-// Online create/join
+// Create / Join
 createRoomBtn.addEventListener('click', async ()=>{
   setStatus('Création de room…','wait');
   const side = chooseSideSel.value; // auto/white/black
   uid = (await ensureAuth()).uid;
   const id = makeRoomId();
-  await createRoom(id, uid, side==='auto'?null:side);
+  await createRoom(id, uid, side==='black'?'black':'white'); // créateur est fixé
   roomId = id;
-  role = side==='black' ? 'black' : (side==='white' ? 'white' : 'white');
+  // Attendre le listener pour connaître le rôle réel
   afterJoinOrCreate();
 });
 
@@ -526,32 +522,34 @@ joinRoomBtn.addEventListener('click', async ()=>{
   if (id.length!==6) { alert('Code 6 lettres'); return; }
   uid = (await ensureAuth()).uid;
   const side = chooseSideSel.value; // auto/white/black
-  role = await joinRoom(id, uid, side);
+  const assigned = await joinRoom(id, uid, side);
   roomId = id;
+  // On ne force pas `role` ici : le listener va le déterminer depuis la DB, évitant les désaccords
   afterJoinOrCreate();
 });
 
 function afterJoinOrCreate(){
   copyLinkBtn.disabled = false;
   leaveRoomBtn.disabled = false;
-  roomInfo.textContent = `Room ${roomId} — rôle: ${role}`;
-  boardOuter.classList.toggle('flipped', role==='black');
+  roomInfo.textContent = `Room ${roomId} — rôle: en cours…`;
   const online = (modeSel.value==='online');
   undoBtn.disabled = online; redoBtn.disabled = online;
   if (roomUnsub) roomUnsub();
   roomUnsub = listenRoom(roomId, (data)=>{
     if (!data) return;
     const players = data.players || {};
-    if (players.white===uid) role='white';
-    else if (players.black===uid) role='black';
-    else role='spectator';
-    if (data.state){
-      applyServerState(data.state);
-    } else if (role==='white'){
+    const prevRole = role;
+    role = (players.white===uid) ? 'white' : (players.black===uid ? 'black' : 'spectator');
+    roomInfo.textContent = `Room ${roomId} — Vous êtes ${role}`;
+    // init state if none and I'm white
+    if (!data.state && role==='white'){
       S=JSON.parse(JSON.stringify(startPos));
       whiteToMove=true; movesNotation=[]; castleRights={K:true,Q:true,k:true,q:true}; epTarget=null; lastMove=null; history=[]; redoStack=[];
       pushState(roomId, {S,whiteToMove,lastMove,movesNotation,castleRights,epTarget});
+    } else if (data.state){
+      applyServerState(data.state);
     }
+    updateTurnInfo();
   });
   setStatus('Connecté — en attente des joueurs…','ok');
 }

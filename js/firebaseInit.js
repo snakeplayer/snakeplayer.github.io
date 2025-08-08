@@ -1,6 +1,6 @@
-// Firebase init (ESM via CDN)
+// Firebase init (ESM via CDN) + transactions d'attribution des couleurs
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getDatabase, ref, onValue, set, update, get, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+import { getDatabase, ref, onValue, set, update, get, onDisconnect, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { firebaseConfig } from './firebaseConfig.js';
 
@@ -30,8 +30,9 @@ export async function createRoom(roomId, uid, side){
   const snapshot = await get(roomRef);
   if (snapshot.exists()) throw new Error('Ce code existe déjà.');
   const players = {};
-  if (side==='white') players.white = uid;
-  else if (side==='black') players.black = uid;
+  // Créateur = white d'office (sauf si côté explicitement black demandé)
+  if (side==='black') players.black = uid;
+  else players.white = uid;
   await set(roomRef, {
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -39,29 +40,45 @@ export async function createRoom(roomId, uid, side){
     players,
     state: null
   });
-  installPresence(roomId, uid);
+  // presence
+  const presRef = ref(db, `presence/${roomId}/${uid}`);
+  await set(presRef, true);
+  onDisconnect(presRef).remove();
 }
 
 export async function joinRoom(roomId, uid, wantedSide='auto'){
-  const roomRef = ref(db, `rooms/${roomId}`);
-  const snap = await get(roomRef);
+  const base = ref(db, `rooms/${roomId}`);
+  const snap = await get(base);
   if (!snap.exists()) throw new Error('Room introuvable');
-  const data = snap.val();
-  const players = data.players || {};
-  let side = wantedSide;
-  if (wantedSide==='auto'){
-    if (!players.white) side='white';
-    else if (!players.black) side='black';
-    else side='spectator';
-  }
-  if (side==='white' && players.white && players.white!==uid) side='spectator';
-  if (side==='black' && players.black && players.black!==uid) side='spectator';
-  const updates = { updatedAt: Date.now() };
-  if (side==='white' && !players.white) updates['players/white'] = uid;
-  if (side==='black' && !players.black) updates['players/black'] = uid;
-  await update(roomRef, updates);
-  installPresence(roomId, uid);
-  return side;
+
+  let assigned='spectator';
+  const playersRef = ref(db, `rooms/${roomId}/players`);
+  await runTransaction(playersRef, (players) => {
+    players = players || {};
+    if (wantedSide==='white'){
+      if (!players.white) { players.white = uid; assigned='white'; }
+      else if (!players.black) { players.black = uid; assigned='black'; }
+      else { assigned='spectator'; }
+    } else if (wantedSide==='black'){
+      if (!players.black) { players.black = uid; assigned='black'; }
+      else if (!players.white) { players.white = uid; assigned='white'; }
+      else { assigned='spectator'; }
+    } else { // auto
+      if (!players.white) { players.white = uid; assigned='white'; }
+      else if (!players.black) { players.black = uid; assigned='black'; }
+      else { assigned='spectator'; }
+    }
+    return players;
+  });
+  // presence
+  const presRef = ref(db, `presence/${roomId}/${uid}`);
+  await set(presRef, true);
+  onDisconnect(presRef).remove();
+
+  // touch updatedAt
+  await update(base, { updatedAt: Date.now() });
+
+  return assigned;
 }
 
 export function listenRoom(roomId, cb){
@@ -79,12 +96,6 @@ export async function leaveRoom(roomId, uid){
   if (data.players?.black===uid) updates['players/black'] = null;
   updates['updatedAt'] = Date.now();
   await update(base, updates);
-}
-
-export function installPresence(roomId, uid){
-  const presRef = ref(db, `presence/${roomId}/${uid}`);
-  set(presRef, true);
-  onDisconnect(presRef).remove();
 }
 
 export async function pushState(roomId, state){

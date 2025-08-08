@@ -1,14 +1,14 @@
-# Échecs en ligne — Firebase (v4.1)
+# Échecs en ligne — Firebase (v4.1.1)
 
-Améliorations multijoueur : gestion de tour fiable, interface claire, orientation auto selon la couleur, blocage propre quand ce n’est pas ton tour, synchro robuste.
+Correctif critique : **attribution des couleurs atomique** via `runTransaction` → impossible d’être deux fois Blancs. UI clarifiée (rôle affiché), blocage propre hors tour, orientation auto pour les Noirs.
 
 ## Setup rapide
-1. Firebase → Authentication → activer **Anonyme** (+ ajouter `snakeplayer.github.io` dans **Domaines autorisés**).
+1. Firebase → Authentication → activer **Anonyme** (+ ajouter `snakeplayer.github.io` aux **Domaines autorisés**).
 2. Realtime Database → créer DB → **Rules** = `firebase.rules.json` → **Publish**.
-3. `js/firebaseConfig.js` → colle TA config (apiKey, authDomain, databaseURL, etc.).
-4. Déploie sur GitHub Pages ou ouvre via un petit serveur local.
+3. `js/firebaseConfig.js` → colle ta config (apiKey, authDomain, **databaseURL**, etc.).
+4. Déploie sur GitHub Pages (racine du repo utilisateur `snakeplayer.github.io`).
 
 ## Notes
-- En **ligne** : pas d’undo/redo (réintroduire plus tard avec une demande d’annulation).
-- **Promotion online** : auto-dame pour éviter les boîtes de dialogue divergentes.
-- **Orientation** : plateau auto-retourné pour les noirs.
+- Créateur = **Blanc** par défaut (ou Noir si tu le forces à la création). Rejoindre utilise une **transaction** pour réserver White/Black.
+- Undo/Redo désactivés en ligne (à réintroduire plus tard avec demande d’annulation).
+- Promotion online = **dame** auto pour garder la synchro simple.
