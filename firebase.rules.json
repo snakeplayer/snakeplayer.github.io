@@ -1,0 +1,25 @@
+{
+  "rules": {
+    ".read": true,
+    "rooms": {
+      "$room": {
+        ".read": true,
+        ".write": "auth != null",
+        "players": {
+          ".write": "auth != null"
+        },
+        "state": {
+          ".write": "auth != null"
+        }
+      }
+    },
+    "presence": {
+      "$room": {
+        "$uid": {
+          ".read": true,
+          ".write": "$uid === auth.uid"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+/* Styles de base (repris, simplifiés) */
+:root { --boardMax: min(84vmin, 800px); --bg: #0f1116; --panel: #161922; --text: #e8ebf1; }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background: var(--bg); color: var(--text); display: grid; place-items: center; }
+.app { display: grid; gap: 16px; padding: 18px; grid-template-columns: auto 420px; align-items: start; width: min(1320px, 96vw); }
+.boardWrap { background: #0b0d12; padding: 12px; border-radius: 14px; border: 1px solid #232632; box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.03); }
+.boardOuter { width: var(--boardMax); height: var(--boardMax); position: relative; display: grid; grid-template-rows: auto 1fr auto; gap: 6px; }
+.board { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); border: 2px solid #2a2f3c; border-radius: 12px; overflow: hidden; width: 100%; height: 100%; }
+.cell { display: grid; place-items: center; font-size: calc(0.72 * var(--boardMax) / 8); position: relative; cursor: pointer; user-select: none; }
+.light { background: #EEEED2; } .dark { background: #769656; }
+.cell.sel { outline: 3px solid #f8d66d; outline-offset: -3px; }
+.cell.last { box-shadow: inset 0 0 0 9999px rgba(60,120,210,.22); }
+.cell .dot { position: absolute; width: 30%; height: 30%; border-radius: 50%; background: rgba(20,20,20,.28); }
+.cell.cap::after { content: ""; position: absolute; inset: 0; border: 4px solid rgba(220,50,50,.65); }
+.piece { line-height: 1; filter: drop-shadow(0 1px 0 #000) drop-shadow(0 0 3px rgba(0,0,0,.55)); }
+.inCheck { box-shadow: inset 0 0 0 9999px rgba(230,40,40,.28) !important; }
+.files, .ranks { color: #aabbcc; font-size: 12px; }
+.files { display: grid; grid-template-columns: repeat(8, 1fr); }
+.files div { text-align: center; }
+.ranks { position: absolute; inset: 0; pointer-events: none; }
+.ranks div { position: absolute; left: 6px; top: 6px; font-size: 12px; opacity: .7; }
+.ranks div.br { left: auto; right: 6px; top: auto; bottom: 6px; }
+.panel { background: var(--panel); border: 1px solid #232632; border-radius: 14px; padding: 14px; display: grid; gap: 14px; }
+.topbar { display: flex; align-items: baseline; justify-content: space-between; }
+h1 { font-size: 18px; margin: 0; }
+.ver { font-size: 12px; color: #aab2c5; }
+.turn { background: #111420; padding: 10px 12px; border-radius: 10px; border: 1px solid #22283a; }
+.btns { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+button { background: #121520; color: var(--text); border: 1px solid #2a2f3c; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+button:active { transform: translateY(1px); }
+.moves { background: #111420; border: 1px solid #22283a; border-radius: 10px; padding: 10px; max-height: 44vh; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.moves ol { margin: 6px 0 0 22px; padding: 0; }
+.note { color: #a2a9b8; font-size: 12px; }
+
+.onlineBox { background:#111420; border:1px solid #22283a; border-radius:10px; padding:10px; display:grid; gap:10px; }
+.onlineBox .row { display:grid; grid-template-columns: 120px 1fr; gap:8px; align-items:center; }
+.onlineBox .row.small { grid-template-columns: 1fr auto auto; gap:8px; }
+.onlineBox input, .onlineBox select, .onlineBox button { background:#121520; color:var(--text); border:1px solid #2a2f3c; border-radius:8px; padding:8px; }
+#roomInput { text-transform: uppercase; }
+@media (max-width: 980px) { .app { grid-template-columns: 1fr; } .moves { max-height: 200px; } }
+.flipped .board { transform: rotate(180deg); }
+.flipped .piece { transform: rotate(180deg); }
+.promoMask { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; }
+.promoBox { background: #161b2a; border: 1px solid #2b3350; border-radius: 12px; padding: 14px; display: grid; gap: 10px; min-width: 240px; }
+.promoRow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.promoBtn { font-size: 26px; background: #0f1426; border: 1px solid #262f54; border-radius: 10px; padding: 8px 10px; cursor: pointer; }
