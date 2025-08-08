@@ -1,13 +1,11 @@
-/* Online chess v4.0 (Firebase) — local + online modes.
-   - Local mode: same-screen play (as before).
-   - Online mode: create/join room -> sync full game state to Firebase on every move.
-   - Spectators: can watch but not move.
-*/
-import { ensureAuth, db, makeRoomId, createRoom, joinRoom, leaveRoom, listenRoom, installPresence, pushState } from './firebaseInit.js';
+/* v4.1 — Online chess (Firebase) with better UX and turn stability */
+import { ensureAuth, makeRoomId, createRoom, joinRoom, leaveRoom, listenRoom, pushState } from './firebaseInit.js';
 
+// DOM refs
 const boardEl = document.getElementById('board');
 const boardOuter = document.getElementById('boardOuter');
 const turnInfo = document.getElementById('turnInfo');
+const statusBar = document.getElementById('statusBar');
 const undoBtn = document.getElementById('undoBtn');
 const redoBtn = document.getElementById('redoBtn');
 const resetBtn = document.getElementById('resetBtn');
@@ -18,7 +16,7 @@ const filesTop = document.getElementById('filesTop');
 const filesBottom = document.getElementById('filesBottom');
 const ranksEl = document.getElementById('ranks');
 
-// Online UI
+// Online controls
 const modeSel = document.getElementById('modeSel');
 const chooseSideSel = document.getElementById('chooseSide');
 const createRoomBtn = document.getElementById('createRoom');
@@ -42,6 +40,7 @@ let startPos = [
   ['R','N','B','Q','K','B','N','R'],
 ];
 
+// Game state
 let S = JSON.parse(JSON.stringify(startPos));
 let whiteToMove = true;
 let selected = null;
@@ -51,16 +50,17 @@ let history = [];
 let redoStack = [];
 let movesNotation = [];
 let flipped = false;
-
 let castleRights = {K:true, Q:true, k:true, q:true};
 let epTarget = null;
 
+// Online state
 let mode = 'online'; // 'local' or 'online'
 let uid = null;
 let roomId = null;
 let role = 'spectator'; // 'white'|'black'|'spectator'
+let roomUnsub = null;
 
-// ---------- Helpers ----------
+// Helpers
 function inBounds(r,c){ return r>=0 && r<8 && c>=0 && c<8; }
 function isWhite(p){ return p && p === p.toUpperCase(); }
 function isBlack(p){ return p && p === p.toLowerCase(); }
@@ -97,10 +97,23 @@ function buildBoard(){
 }
 
 function updateTurnInfo(){
-  let prefix = mode==='online'
-    ? `[Room ${roomId||'—'} · ${role}] `
-    : '';
-  turnInfo.textContent = endStatus() || prefix + `Tour : ${whiteToMove ? '♔ Blanc' : '♚ Noir'}`;
+  const who = mode==='online' ? `Room ${roomId||'—'} · rôle: ${role}` : 'Local';
+  const end = endStatus();
+  turnInfo.textContent = end || `${who} — Tour : ${whiteToMove ? '♔ Blanc' : '♚ Noir'}`;
+  if (mode==='online'){
+    if (role==='spectator') setStatus('Vous regardez la partie (spectateur).', 'wait');
+    else if ((whiteToMove && role==='white') || (!whiteToMove && role==='black')) setStatus('🎯 Votre tour — jouez un coup.', 'me');
+    else setStatus('⌛ Tour de l’adversaire…', 'wait');
+    // auto flip
+    document.getElementById('boardOuter').classList.toggle('flipped', role==='black');
+  } else {
+    setStatus('Mode local : 2 joueurs sur le même écran.', 'ok');
+  }
+}
+
+function setStatus(text, kind){
+  statusBar.textContent = text;
+  statusBar.className = 'status ' + (kind||'');
 }
 
 function squareEl(r,c){ return boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`); }
@@ -123,7 +136,7 @@ function showHints(moves, r, c){
   markCheckSquares();
 }
 
-// ---------- Move generation ----------
+// --- Move generation ---
 function genPseudoMoves(r,c){
   const p = S[r][c]; if(!p) return [];
   const moves = []; const colorWhite = isWhite(p);
@@ -136,7 +149,6 @@ function genPseudoMoves(r,c){
     moves.push({r:rr,c:cc,capture:!!t});
   };
   const line=(dr,dc)=>{ let rr=r+dr,cc=c+dc; while(inBounds(rr,cc)){ if(S[rr][cc]){ if(!sameColor(p,S[rr][cc])) moves.push({r:rr,c:cc,capture:true}); break; } else moves.push({r:rr,c:cc,capture:false}); rr+=dr; cc+=dc; } };
-
   switch(p.toLowerCase()){
     case 'p': {
       const dir = colorWhite ? -1 : 1;
@@ -198,7 +210,7 @@ function isInCheck(white){
 function markCheckSquares(){
   const wk=findKing(true), bk=findKing(false);
   if (wk && isInCheck(true)) squareEl(wk.r,wk.c)?.classList.add('inCheck');
-  if (bk && isInCheck(false)) squareEl(bk.r,bk.c)?.classList.add('inCheck');
+  if (bk && isInCheck(false)) squareEl(bk.r,wk?.c)?.classList.add('inCheck');
 }
 
 function genLegalMoves(r,c){
@@ -228,13 +240,11 @@ function genLegalMoves(r,c){
 
 function fromRC(r,c){ return {r,c}; }
 
-// ---------- Move application ----------
 function doMove(from, to, opts={record:true, noUI:false, promoChoice:null}){
   const moving=S[from.r][from.c]; const white=isWhite(moving);
   let captured=S[to.r][to.c]||''; let promo=false; let castle=null; let enPassant=false;
   if (opts.record) redoStack=[];
   let newEp=null;
-
   const pseudo=genPseudoMoves(from.r,from.c);
   const m=pseudo.find(x=>x.r===to.r&&x.c===to.c);
   if (m && m.castle) castle=m.castle;
@@ -256,12 +266,8 @@ function doMove(from, to, opts={record:true, noUI:false, promoChoice:null}){
 
   if (moving.toLowerCase()==='p' && Math.abs(to.r-from.r)===2){ newEp={r:(from.r+to.r)/2, c:from.c}; }
 
-  if (moving==='P' && to.r===0){
-    S[to.r][to.c] = opts.promoChoice || 'Q'; promo=true;
-  }
-  if (moving==='p' && to.r===7){
-    S[to.r][to.c] = opts.promoChoice || 'q'; promo=true;
-  }
+  if (moving==='P' && to.r===0){ S[to.r][to.c] = opts.promoChoice || 'Q'; promo=true; }
+  if (moving==='p' && to.r===7){ S[to.r][to.c] = opts.promoChoice || 'q'; promo=true; }
 
   if (moving==='K'){ castleRights.K=false; castleRights.Q=false; }
   if (moving==='k'){ castleRights.k=false; castleRights.q=false; }
@@ -289,7 +295,6 @@ function doMove(from, to, opts={record:true, noUI:false, promoChoice:null}){
     const captureMark = captured ? 'x' : '';
     const note = `${pieceLetter}${captureMark}${idxToSquare(to.r,to.c)}${promo?'='+S[to.r][to.c].toUpperCase():''}${castle?(castle.toLowerCase()==='k'?' O-O':' O-O-O'):''}`.trim();
     movesNotation.push(note);
-
     buildBoard(); clearHints(); renderMoves(); updateTurnInfo();
   }
 }
@@ -309,26 +314,29 @@ function renderMoves(){
 }
 
 function endStatus(){
-  // Minimal: only check no-legal-moves status is computed client-side; state text displayed.
   const moves=allMoves(whiteToMove);
   if (moves.length>0) return "";
   if (isInCheck(whiteToMove)) return whiteToMove ? "Échec et mat — noir gagne" : "Échec et mat — blanc gagne";
   return "Pat — match nul";
 }
 
-// ---------- Online glue ----------
+function allMoves(white){
+  const res=[];
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const p=S[r][c]; if(!p) continue;
+    if (white && !isWhite(p)) continue;
+    if (!white && !isBlack(p)) continue;
+    const mvs=genLegalMoves(r,c);
+    for(const m of mvs) res.push({from:{r,c}, to:{r:m.r,c:m.c}});
+  }
+  return res;
+}
+
+// --- Online logic ---
 function canMoveOnline(){
   if (mode!=='online') return true;
   if (role==='spectator') return false;
   return (whiteToMove && role==='white') || (!whiteToMove && role==='black');
-}
-
-async function syncToServer(){
-  if (mode!=='online' || !roomId) return;
-  // Push full state; clients apply onValue to update
-  await pushState(roomId, {
-    S, whiteToMove, lastMove, movesNotation, castleRights, epTarget
-  });
 }
 
 function applyServerState(state){
@@ -339,10 +347,23 @@ function applyServerState(state){
   movesNotation = state.movesNotation || [];
   castleRights = state.castleRights || {K:true,Q:true,k:true,q:true};
   epTarget = state.epTarget || null;
+  selected=null; legalTargets=[];
+  boardOuter.classList.toggle('flipped', role==='black');
   buildBoard(); clearHints(); renderMoves(); updateTurnInfo();
 }
 
-// ---------- UI interactions ----------
+let syncTimer=null;
+function syncToServer(){
+  if (mode!=='online' || !roomId) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(()=>{
+    pushState(roomId, {
+      S, whiteToMove, lastMove, movesNotation, castleRights, epTarget
+    });
+  }, 30);
+}
+
+// --- UI interactions ---
 function onCellTap(e){
   if (!canMoveOnline()) return;
   const cell = e.target.closest('.cell'); if(!cell) return;
@@ -352,7 +373,11 @@ function onCellTap(e){
   if (selected){
     const ok = legalTargets.some(m=>m.r===r&&m.c===c);
     if (ok){
-      doMove(selected,{r,c},{record:true,noUI:false});
+      const moving=S[selected.r][selected.c];
+      const isPawn = moving && (moving==='P'||moving==='p');
+      const willPromote = isPawn && ((moving==='P' && r===0) || (moving==='p' && r===7));
+      const promoChoice = (mode==='online' && willPromote) ? (isWhite(moving)?'Q':'q') : null;
+      doMove(selected,{r,c},{record:true,noUI:false,promoChoice});
       selected=null; legalTargets=[];
       syncToServer();
       return;
@@ -386,7 +411,7 @@ function onCellTap(e){
 boardEl.addEventListener('click', onCellTap);
 
 undoBtn.addEventListener('click', ()=>{
-  if (mode==='online') return; // Keep it simple: no undo online
+  if (mode==='online') return;
   if(history.length<1) return;
   redoStack.push(JSON.stringify({
     S, whiteToMove, lastMove,
@@ -451,7 +476,7 @@ exportBtn.addEventListener('click', ()=>{
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 
-// Promotion (human only when local; online uses default queen to avoid async UI races)
+// Local promotion UI (online=auto-queen)
 function askPromotion(white){
   return new Promise(resolve => {
     const mask=document.createElement('div'); mask.className='promoMask';
@@ -468,7 +493,6 @@ function askPromotion(white){
   });
 }
 
-// Wrap for local mode only
 const _doMove = doMove;
 doMove = function(from,to,opts={record:true,noUI:false}){
   const moving=S[from.r]?.[from.c];
@@ -478,48 +502,65 @@ doMove = function(from,to,opts={record:true,noUI:false}){
     const white = isWhite(moving);
     return askPromotion(white).then(choice => _doMove(from,to,{...opts,promoChoice:choice}));
   } else {
-    // In online mode, default to queen to keep sync simple
-    if (mode==='online' && willPromote && !opts.promoChoice){
-      opts = {...opts, promoChoice: isWhite(moving) ? 'Q' : 'q'};
-    }
     const res = _doMove(from,to,opts);
-    // After any local move, if online, sync
     if (mode==='online') syncToServer();
     return res;
   }
 };
 
-// ---------- Online controls ----------
+// Online create/join
 createRoomBtn.addEventListener('click', async ()=>{
-  mode = modeSel.value;
-  if (mode!=='online') { alert('Choisis "En ligne"'); return; }
+  setStatus('Création de room…','wait');
   const side = chooseSideSel.value; // auto/white/black
   uid = (await ensureAuth()).uid;
   const id = makeRoomId();
-  await createRoom(id, uid, side==='auto' ? null : side);
+  await createRoom(id, uid, side==='auto'?null:side);
   roomId = id;
-  roomInput.value = id;
-  setupListeners();
-  installPresence(roomId, uid);
-  roomInfo.textContent = `Room ${id} créée`;
-  copyLinkBtn.disabled = false;
-  leaveRoomBtn.disabled = false;
+  role = side==='black' ? 'black' : (side==='white' ? 'white' : 'white');
+  afterJoinOrCreate();
 });
 
 joinRoomBtn.addEventListener('click', async ()=>{
-  mode = modeSel.value;
-  if (mode!=='online') { alert('Choisis "En ligne"'); return; }
+  setStatus('Connexion à la room…','wait');
   const id = (roomInput.value || '').trim().toUpperCase();
   if (id.length!==6) { alert('Code 6 lettres'); return; }
   uid = (await ensureAuth()).uid;
   const side = chooseSideSel.value; // auto/white/black
   role = await joinRoom(id, uid, side);
   roomId = id;
-  setupListeners();
-  installPresence(roomId, uid);
-  roomInfo.textContent = `Rejoint ${id} en tant que ${role}`;
+  afterJoinOrCreate();
+});
+
+function afterJoinOrCreate(){
   copyLinkBtn.disabled = false;
   leaveRoomBtn.disabled = false;
+  roomInfo.textContent = `Room ${roomId} — rôle: ${role}`;
+  boardOuter.classList.toggle('flipped', role==='black');
+  const online = (modeSel.value==='online');
+  undoBtn.disabled = online; redoBtn.disabled = online;
+  if (roomUnsub) roomUnsub();
+  roomUnsub = listenRoom(roomId, (data)=>{
+    if (!data) return;
+    const players = data.players || {};
+    if (players.white===uid) role='white';
+    else if (players.black===uid) role='black';
+    else role='spectator';
+    if (data.state){
+      applyServerState(data.state);
+    } else if (role==='white'){
+      S=JSON.parse(JSON.stringify(startPos));
+      whiteToMove=true; movesNotation=[]; castleRights={K:true,Q:true,k:true,q:true}; epTarget=null; lastMove=null; history=[]; redoStack=[];
+      pushState(roomId, {S,whiteToMove,lastMove,movesNotation,castleRights,epTarget});
+    }
+  });
+  setStatus('Connecté — en attente des joueurs…','ok');
+}
+
+modeSel.addEventListener('change', ()=>{
+  mode = modeSel.value;
+  const online = (mode==='online');
+  undoBtn.disabled = online; redoBtn.disabled = online;
+  updateTurnInfo();
 });
 
 copyLinkBtn.addEventListener('click', ()=>{
@@ -530,51 +571,22 @@ copyLinkBtn.addEventListener('click', ()=>{
 });
 
 leaveRoomBtn.addEventListener('click', async ()=>{
-  if (!roomId || !uid) return;
+  if (!roomId) return;
   await leaveRoom(roomId, uid);
-  roomId = null; role='spectator';
-  roomInfo.textContent = 'Hors ligne';
-  copyLinkBtn.disabled = true;
-  leaveRoomBtn.disabled = true;
+  if (roomUnsub) roomUnsub();
+  roomUnsub = null;
+  roomId=null; role='spectator';
+  setStatus('Hors ligne','');
+  updateTurnInfo();
 });
 
-function setupListeners(){
-  if (!roomId) return;
-  // listen room data
-  listenRoom(roomId, (data)=>{
-    if (!data) return;
-    // roles
-    const players = data.players || {};
-    if (players.white===uid) role='white';
-    else if (players.black===uid) role='black';
-    else role='spectator';
-    // state
-    applyServerState(data.state);
-    // auto-assign initial state if none (host set)
-    if (!data.state){
-      // initialize only once by first joiner who has white role
-      if (role==='white'){
-        S=JSON.parse(JSON.stringify(startPos));
-        whiteToMove=true; movesNotation=[]; castleRights={K:true,Q:true,k:true,q:true}; epTarget=null; lastMove=null; history=[]; redoStack=[];
-        pushState(roomId, {S,whiteToMove,lastMove,movesNotation,castleRights,epTarget});
-      }
-    }
-    updateTurnInfo();
-  });
-  // query param joining
+// Init
+function init(){
+  buildLegends();
+  buildBoard();
+  renderMoves();
+  updateTurnInfo();
   const params = new URLSearchParams(location.search);
-  if (!roomId && params.get('room')){
-    roomInput.value = params.get('room').toUpperCase();
-  }
+  if (params.get('room')) roomInput.value = params.get('room').toUpperCase();
 }
-
-// init
-buildLegends();
-buildBoard();
-renderMoves();
-updateTurnInfo();
-// prefill room from URL if present
-const params = new URLSearchParams(location.search);
-if (params.get('room')){
-  roomInput.value = params.get('room').toUpperCase();
-}
+init();

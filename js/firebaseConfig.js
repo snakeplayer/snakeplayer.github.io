@@ -1,4 +1,4 @@
-// Remplace ces valeurs par ta config Firebase (Project Settings -> General -> Your apps -> Web app).
+// Remplace par ta config Firebase (Project Settings → General → Web app).
 export const firebaseConfig = {
   databaseURL: "https://chessgame-24cef-default-rtdb.europe-west1.firebasedatabase.app/",
   apiKey: "AIzaSyDA1Dax_WO9POtPtg22XWyIGvebS338Ug4",

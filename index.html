@@ -19,10 +19,10 @@
     <aside class="panel">
       <div class="topbar">
         <h1>Échecs — En ligne</h1>
-        <div class="ver">v4.0 (Firebase)</div>
+        <div class="ver">v4.1</div>
       </div>
 
-      <div class="turn" id="turnInfo">Tour : …</div>
+      <div class="status" id="statusBar">Hors ligne</div>
 
       <div class="onlineBox">
         <div class="row">
@@ -41,13 +41,13 @@
               <option value="black">Noir</option>
             </select>
           </div>
-          <div class="row">
-            <button id="createRoom">Créer une partie</button>
+          <div class="row joinRow">
+            <button id="createRoom">Créer</button>
             <input id="roomInput" placeholder="Code (6 lettres)" maxlength="6"/>
             <button id="joinRoom">Rejoindre</button>
           </div>
           <div class="row small">
-            <span id="roomInfo">Hors ligne</span>
+            <span id="roomInfo">—</span>
             <button id="copyLink" disabled>Copier le lien</button>
             <button id="leaveRoom" disabled>Quitter</button>
           </div>
@@ -55,8 +55,8 @@
       </div>
 
       <div class="btns">
-        <button id="undoBtn" type="button">↶ Annuler</button>
-        <button id="redoBtn" type="button">↷ Refaire</button>
+        <button id="undoBtn" type="button" title="Local uniquement">↶ Annuler</button>
+        <button id="redoBtn" type="button" title="Local uniquement">↷ Refaire</button>
         <button id="resetBtn" type="button">⟲ Réinitialiser</button>
         <button id="flipBtn" type="button">⇵ Tourner le plateau</button>
         <button id="exportBtn" type="button">⤓ Exporter</button>
@@ -68,8 +68,8 @@
       </div>
 
       <div class="note">
-        Backend : Firebase Realtime Database + Auth anonyme. Rooms avec code 6 lettres. Spectateurs possibles (lecture seule).<br/>
-        Conseillé : déployer sur un hébergement statique (GitHub Pages, Netlify, Vercel).
+        Backend : Firebase Realtime Database + Auth anonyme.<br/>
+        <em>Conseil :</em> déploie sur GitHub Pages / Netlify / Vercel.
       </div>
     </aside>
   </div>
