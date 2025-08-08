@@ -1,10 +1,10 @@
-/* v4.1.1 — Online chess (Firebase) with atomic color assignment */
+/* v4.1.2 — Multiplayer polish + logs */
 import { ensureAuth, makeRoomId, createRoom, joinRoom, leaveRoom, listenRoom, pushState } from './firebaseInit.js';
 
 // DOM refs
 const boardEl = document.getElementById('board');
 const boardOuter = document.getElementById('boardOuter');
-const turnInfo = document.getElementById('turnInfo');
+const boardWrap = document.querySelector('.boardWrap');
 const statusBar = document.getElementById('statusBar');
 const undoBtn = document.getElementById('undoBtn');
 const redoBtn = document.getElementById('redoBtn');
@@ -91,22 +91,8 @@ function buildBoard(){
     }
   }
   if (lastMove) squareEl(lastMove.to.r,lastMove.to.c)?.classList.add('last');
-  updateTurnInfo();
+  updateStatusUI();
   markCheckSquares();
-}
-
-function updateTurnInfo(){
-  const who = mode==='online' ? `Room ${roomId||'—'} · rôle: ${role}` : 'Local';
-  const end = endStatus();
-  turnInfo.textContent = end || `${who} — Tour : ${whiteToMove ? '♔ Blanc' : '♚ Noir'}`;
-  if (mode==='online'){
-    if (role==='spectator') setStatus('Vous regardez la partie (spectateur).', 'wait');
-    else if ((whiteToMove && role==='white') || (!whiteToMove && role==='black')) setStatus('🎯 Votre tour — jouez un coup.', 'me');
-    else setStatus('⌛ Tour de l’adversaire…', 'wait');
-    document.getElementById('boardOuter').classList.toggle('flipped', role==='black');
-  } else {
-    setStatus('Mode local : 2 joueurs sur le même écran.', 'ok');
-  }
 }
 
 function setStatus(text, kind){
@@ -114,12 +100,36 @@ function setStatus(text, kind){
   statusBar.className = 'status ' + (kind||'');
 }
 
+function updateStatusUI(){
+  const end = endStatus();
+  if (end){
+    setStatus(end, 'ok');
+    boardWrap.classList.remove('turnMe','turnOpp');
+    return;
+  }
+  if (mode==='online'){
+    if (role==='spectator'){
+      setStatus('👀 Spectateur — partie en cours.', 'wait');
+      boardWrap.classList.remove('turnMe','turnOpp');
+    } else if ((whiteToMove && role==='white') || (!whiteToMove && role==='black')){
+      setStatus('🎯 Votre tour — jouez un coup.', 'me');
+      boardWrap.classList.add('turnMe'); boardWrap.classList.remove('turnOpp');
+    } else {
+      setStatus('⌛ Tour de l’adversaire…', 'wait');
+      boardWrap.classList.add('turnOpp'); boardWrap.classList.remove('turnMe');
+    }
+  } else {
+    setStatus('Mode local : 2 joueurs sur le même écran.', 'ok');
+    boardWrap.classList.remove('turnMe','turnOpp');
+  }
+}
+
 function squareEl(r,c){ return boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`); }
 
 function clearHints(){
   boardEl.querySelectorAll('.cell').forEach(el=>{
     el.classList.remove('sel','cap','inCheck');
-    const dot = el.querySelector('.dot'); if (dot) dot.remove();
+    const dot = el.querySelector('.dot'); if (dot) el.removeChild(dot);
   });
 }
 
@@ -293,7 +303,7 @@ function doMove(from, to, opts={record:true, noUI:false, promoChoice:null}){
     const captureMark = captured ? 'x' : '';
     const note = `${pieceLetter}${captureMark}${idxToSquare(to.r,to.c)}${promo?'='+S[to.r][to.c].toUpperCase():''}${castle?(castle.toLowerCase()==='k'?' O-O':' O-O-O'):''}`.trim();
     movesNotation.push(note);
-    buildBoard(); clearHints(); renderMoves(); updateTurnInfo();
+    buildBoard(); clearHints(); renderMoves();
   }
 }
 
@@ -347,7 +357,7 @@ function applyServerState(state){
   epTarget = state.epTarget || null;
   selected=null; legalTargets=[];
   document.getElementById('boardOuter').classList.toggle('flipped', role==='black');
-  buildBoard(); clearHints(); renderMoves(); updateTurnInfo();
+  buildBoard(); clearHints(); renderMoves(); updateStatusUI();
 }
 
 let syncTimer=null;
@@ -361,7 +371,7 @@ function syncToServer(){
 
 // --- UI interactions ---
 function onCellTap(e){
-  if (!canMoveOnline()) return;
+  if (!canMoveOnline()) { console.log('[MOVE] Ignored: not your turn or spectator'); return; }
   const cell = e.target.closest('.cell'); if(!cell) return;
   const r=+cell.dataset.r, c=+cell.dataset.c;
   const p=S[r][c];
@@ -423,7 +433,7 @@ undoBtn.addEventListener('click', ()=>{
   castleRights=prev.castleRights||castleRights;
   epTarget=prev.epTarget||null;
   selected=null; legalTargets=[];
-  buildBoard(); clearHints(); renderMoves(); updateTurnInfo();
+  buildBoard(); clearHints(); renderMoves(); updateStatusUI();
 });
 
 redoBtn.addEventListener('click', ()=>{
@@ -443,7 +453,7 @@ redoBtn.addEventListener('click', ()=>{
   castleRights=st.castleRights||castleRights;
   epTarget=st.epTarget||null;
   selected=null; legalTargets=[];
-  buildBoard(); clearHints(); renderMoves(); updateTurnInfo();
+  buildBoard(); clearHints(); renderMoves(); updateStatusUI();
 });
 
 resetBtn.addEventListener('click', ()=>{
@@ -451,7 +461,7 @@ resetBtn.addEventListener('click', ()=>{
   whiteToMove=true;
   selected=null; legalTargets=[]; lastMove=null; history=[]; redoStack=[]; movesNotation=[];
   castleRights={K:true,Q:true,k:true,q:true}; epTarget=null;
-  buildBoard(); clearHints(); renderMoves(); updateTurnInfo();
+  buildBoard(); clearHints(); renderMoves(); updateStatusUI();
   syncToServer();
 });
 
@@ -510,10 +520,9 @@ createRoomBtn.addEventListener('click', async ()=>{
   const side = chooseSideSel.value; // auto/white/black
   uid = (await ensureAuth()).uid;
   const id = makeRoomId();
-  await createRoom(id, uid, side==='black'?'black':'white'); // créateur est fixé
+  await createRoom(id, uid, side==='black'?'black':'white');
   roomId = id;
-  // Attendre le listener pour connaître le rôle réel
-  afterJoinOrCreate();
+  startListening();
 });
 
 joinRoomBtn.addEventListener('click', async ()=>{
@@ -521,44 +530,41 @@ joinRoomBtn.addEventListener('click', async ()=>{
   const id = (roomInput.value || '').trim().toUpperCase();
   if (id.length!==6) { alert('Code 6 lettres'); return; }
   uid = (await ensureAuth()).uid;
-  const side = chooseSideSel.value; // auto/white/black
-  const assigned = await joinRoom(id, uid, side);
+  await joinRoom(id, uid, chooseSideSel.value);
   roomId = id;
-  // On ne force pas `role` ici : le listener va le déterminer depuis la DB, évitant les désaccords
-  afterJoinOrCreate();
+  startListening();
 });
 
-function afterJoinOrCreate(){
+function startListening(){
   copyLinkBtn.disabled = false;
   leaveRoomBtn.disabled = false;
-  roomInfo.textContent = `Room ${roomId} — rôle: en cours…`;
-  const online = (modeSel.value==='online');
-  undoBtn.disabled = online; redoBtn.disabled = online;
   if (roomUnsub) roomUnsub();
   roomUnsub = listenRoom(roomId, (data)=>{
     if (!data) return;
     const players = data.players || {};
-    const prevRole = role;
     role = (players.white===uid) ? 'white' : (players.black===uid ? 'black' : 'spectator');
     roomInfo.textContent = `Room ${roomId} — Vous êtes ${role}`;
-    // init state if none and I'm white
+    // init if empty and I'm white
     if (!data.state && role==='white'){
       S=JSON.parse(JSON.stringify(startPos));
       whiteToMove=true; movesNotation=[]; castleRights={K:true,Q:true,k:true,q:true}; epTarget=null; lastMove=null; history=[]; redoStack=[];
       pushState(roomId, {S,whiteToMove,lastMove,movesNotation,castleRights,epTarget});
     } else if (data.state){
       applyServerState(data.state);
+    } else {
+      // No state yet and I'm not white: just update UI
+      buildBoard(); renderMoves(); updateStatusUI();
     }
-    updateTurnInfo();
   });
   setStatus('Connecté — en attente des joueurs…','ok');
 }
 
+// Mode switch
 modeSel.addEventListener('change', ()=>{
   mode = modeSel.value;
   const online = (mode==='online');
   undoBtn.disabled = online; redoBtn.disabled = online;
-  updateTurnInfo();
+  updateStatusUI();
 });
 
 copyLinkBtn.addEventListener('click', ()=>{
@@ -575,7 +581,7 @@ leaveRoomBtn.addEventListener('click', async ()=>{
   roomUnsub = null;
   roomId=null; role='spectator';
   setStatus('Hors ligne','');
-  updateTurnInfo();
+  updateStatusUI();
 });
 
 // Init
@@ -583,7 +589,7 @@ function init(){
   buildLegends();
   buildBoard();
   renderMoves();
-  updateTurnInfo();
+  updateStatusUI();
   const params = new URLSearchParams(location.search);
   if (params.get('room')) roomInput.value = params.get('room').toUpperCase();
 }

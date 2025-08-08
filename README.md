@@ -1,14 +1,17 @@
-# Échecs en ligne — Firebase (v4.1.1)
+# Échecs en ligne — Firebase (v4.1.2)
 
-Correctif critique : **attribution des couleurs atomique** via `runTransaction` → impossible d’être deux fois Blancs. UI clarifiée (rôle affiché), blocage propre hors tour, orientation auto pour les Noirs.
+Correctifs et UX multi :
+- Attribution **atomique** des couleurs via `runTransaction` (impossible d’être deux fois Blancs).
+- Ecoute `onValue` avec logs → visibilité sur la room et l’état.
+- Bordure **verte** quand c’est votre tour, **jaune** sinon.
+- Rôle affiché clairement + plateau auto-retourné pour les Noirs.
+- Promo en ligne = Dame auto.
 
 ## Setup rapide
-1. Firebase → Authentication → activer **Anonyme** (+ ajouter `snakeplayer.github.io` aux **Domaines autorisés**).
+1. Firebase → Auth → activer **Anonyme** + ajouter `snakeplayer.github.io` aux **Domaines autorisés**.
 2. Realtime Database → créer DB → **Rules** = `firebase.rules.json` → **Publish**.
-3. `js/firebaseConfig.js` → colle ta config (apiKey, authDomain, **databaseURL**, etc.).
-4. Déploie sur GitHub Pages (racine du repo utilisateur `snakeplayer.github.io`).
+3. `js/firebaseConfig.js` → colle ta config (apiKey, authDomain, databaseURL, etc.).
+4. Déploie tout à la **racine** du repo `snakeplayer.github.io`.
 
-## Notes
-- Créateur = **Blanc** par défaut (ou Noir si tu le forces à la création). Rejoindre utilise une **transaction** pour réserver White/Black.
-- Undo/Redo désactivés en ligne (à réintroduire plus tard avec demande d’annulation).
-- Promotion online = **dame** auto pour garder la synchro simple.
+## Debug
+Ouvre la **console** : tu verras les logs `[AUTH]`, `[ROOM]`, `[STATE]`, `[MOVE]`.

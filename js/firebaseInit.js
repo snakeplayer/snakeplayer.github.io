@@ -1,4 +1,4 @@
-// Firebase init (ESM via CDN) + transactions d'attribution des couleurs
+// v4.1.2 — Firebase init + color assignment with transactions + logs
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getDatabase, ref, onValue, set, update, get, onDisconnect, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
@@ -12,8 +12,8 @@ export const auth = getAuth(app);
 export async function ensureAuth(){
   return new Promise((resolve, reject) => {
     onAuthStateChanged(auth, (user) => {
-      if (user) resolve(user);
-      else signInAnonymously(auth).catch(reject);
+      if (user) { console.log('[AUTH] Connected as', user.uid); resolve(user); }
+      else signInAnonymously(auth).then(cred => { console.log('[AUTH] Anonymous ok', cred.user.uid); }).catch(reject);
     });
   });
 }
@@ -30,9 +30,7 @@ export async function createRoom(roomId, uid, side){
   const snapshot = await get(roomRef);
   if (snapshot.exists()) throw new Error('Ce code existe déjà.');
   const players = {};
-  // Créateur = white d'office (sauf si côté explicitement black demandé)
-  if (side==='black') players.black = uid;
-  else players.white = uid;
+  if (side==='black') players.black = uid; else players.white = uid; // créateur blanc par défaut
   await set(roomRef, {
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -40,13 +38,14 @@ export async function createRoom(roomId, uid, side){
     players,
     state: null
   });
-  // presence
   const presRef = ref(db, `presence/${roomId}/${uid}`);
   await set(presRef, true);
   onDisconnect(presRef).remove();
+  console.log('[ROOM] Created', roomId, 'players=', players);
 }
 
 export async function joinRoom(roomId, uid, wantedSide='auto'){
+  console.log('[ROOM] Join requested', roomId, 'uid=', uid, 'wantedSide=', wantedSide);
   const base = ref(db, `rooms/${roomId}`);
   const snap = await get(base);
   if (!snap.exists()) throw new Error('Room introuvable');
@@ -63,27 +62,28 @@ export async function joinRoom(roomId, uid, wantedSide='auto'){
       if (!players.black) { players.black = uid; assigned='black'; }
       else if (!players.white) { players.white = uid; assigned='white'; }
       else { assigned='spectator'; }
-    } else { // auto
+    } else {
       if (!players.white) { players.white = uid; assigned='white'; }
       else if (!players.black) { players.black = uid; assigned='black'; }
       else { assigned='spectator'; }
     }
     return players;
   });
-  // presence
   const presRef = ref(db, `presence/${roomId}/${uid}`);
   await set(presRef, true);
   onDisconnect(presRef).remove();
-
-  // touch updatedAt
   await update(base, { updatedAt: Date.now() });
-
+  console.log('[ROOM] Joined', roomId, 'assigned=', assigned);
   return assigned;
 }
 
 export function listenRoom(roomId, cb){
   const roomRef = ref(db, `rooms/${roomId}`);
-  return onValue(roomRef, (snap)=> cb(snap.val()));
+  return onValue(roomRef, (snap)=> {
+    const val = snap.val();
+    console.log('[ROOM] onValue', roomId, val);
+    cb(val);
+  });
 }
 
 export async function leaveRoom(roomId, uid){
@@ -96,6 +96,7 @@ export async function leaveRoom(roomId, uid){
   if (data.players?.black===uid) updates['players/black'] = null;
   updates['updatedAt'] = Date.now();
   await update(base, updates);
+  console.log('[ROOM] Left', roomId, uid);
 }
 
 export async function pushState(roomId, state){
@@ -105,4 +106,5 @@ export async function pushState(roomId, state){
     updatedAt: Date.now(),
     status: 'live'
   });
+  console.log('[STATE] pushed', roomId, state);
 }
