@@ -539,7 +539,7 @@ function startListening(){
   copyLinkBtn.disabled = false;
   leaveRoomBtn.disabled = false;
   if (roomUnsub) roomUnsub();
-  roomUnsub = listenRoom(roomId, (data)=>{
+  roomUnsub = listenRoom(roomId, (data)=>{ try {
     if (!data) return;
     const players = data.players || {};
     role = (players.white===uid) ? 'white' : (players.black===uid ? 'black' : 'spectator');
@@ -555,6 +555,7 @@ function startListening(){
       // No state yet and I'm not white: just update UI
       buildBoard(); renderMoves(); updateStatusUI();
     }
+  } catch(e){ console.error('[ROOM] onValue handler error', e); }
   });
   setStatus('Connecté — en attente des joueurs…','ok');
 }
