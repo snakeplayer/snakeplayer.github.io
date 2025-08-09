@@ -370,54 +370,54 @@ function syncToServer(){
 }
 
 // --- UI interactions ---
-
 function onCellTap(e){
   const cell = e.target.closest('.cell'); if(!cell) return;
   const r=+cell.dataset.r, c=+cell.dataset.c;
   const p=S[r][c];
-  // Always allow selection (even off-turn), but restrict making the move if it's not your turn online.
-  if (selected){
-    const ok = legalTargets.some(m=>m.r===r&&m.c===c);
-    if (ok){
-      const moving=S[selected.r][selected.c];
-      const movingIsWhite = isWhite(moving);
-      // If online, block move when it's not your turn or moving the wrong color
-      if (mode==='online'){
-        const myTurn = (whiteToMove && role==='white') || (!whiteToMove && role==='black');
-        const movingMatchesTurn = (whiteToMove && movingIsWhite) || (!whiteToMove && !movingIsWhite);
-        if (!myTurn || !movingMatchesTurn){
-          console.log('[MOVE] Blocked (not your turn)', {whiteToMove, role, moving});
-          return;
-        }
-      }
-      const isPawn = moving && (moving==='P'||moving==='p');
-      const willPromote = isPawn && ((moving==='P' && r===0) || (moving==='p' && r===7));
-      const promoChoice = (mode==='online' && willPromote) ? (isWhite(moving)?'Q':'q') : null;
-      doMove(selected,{r,c},{record:true,noUI:false,promoChoice});
-      selected=null; legalTargets=[];
-      syncToServer();
-      return;
-    }
-    // Change selection if clicking a same-color piece
-    if (p && ((isWhite(p) && (whiteToMove||mode==='online'?isWhite(p):true)) || (isBlack(p)))){
-      selected={r,c};
-      legalTargets=genLegalMoves(r,c);
-      console.log('[SELECT] change', {r,c,p,whiteToMove,role});
-      showHints(legalTargets,r,c);
-      return;
-    }
-    selected=null; legalTargets=[]; clearHints();
-  } else {
-    if (p){
-      selected={r,c};
-      legalTargets=genLegalMoves(r,c);
+
+  // 1) Sélection toujours permise (même hors tour)
+  if (!selected){
+    if (p && ((whiteToMove && isWhite(p)) || (!whiteToMove && isBlack(p)))){
       console.log('[SELECT]', {r,c,p,whiteToMove,role});
+      selected={r,c};
+      legalTargets=genLegalMoves(r,c);
       showHints(legalTargets,r,c);
     }
+    return;
   }
+
+  // 2) Si déjà une sélection : tentative de déplacement
+  const ok = legalTargets.some(m=>m.r===r&&m.c===c);
+  if (!ok){
+    // Re-sélection d'une autre pièce de la bonne couleur
+    if (p && ((whiteToMove && isWhite(p)) || (!whiteToMove && isBlack(p)))){
+      console.log('[SELECT:change]', {r,c,p,whiteToMove,role});
+      selected={r,c};
+      legalTargets=genLegalMoves(r,c);
+      showHints(legalTargets,r,c);
+      return;
+    }
+    // reset
+    selected=null; legalTargets=[]; clearHints();
+    return;
+  }
+
+  // 3) Blocage seulement au déplacement si pas ton tour
+  const moving=S[selected.r][selected.c];
+  const myTurn = (whiteToMove && role==='white') || (!whiteToMove && role==='black');
+  if (mode==='online' && !myTurn){
+    console.warn('[MOVE] Blocked: not your turn', {whiteToMove, role, moving, to:{r,c}});
+    return;
+  }
+
+  const isPawn = moving && (moving==='P'||moving==='p');
+  const willPromote = isPawn && ((moving==='P' && r===0) || (moving==='p' && r===7));
+  const promoChoice = (mode==='online' && willPromote) ? (isWhite(moving)?'Q':'q') : null;
+  doMove(selected,{r,c},{record:true,noUI:false,promoChoice});
+  selected=null; legalTargets=[];
+  syncToServer();
 }
 boardEl.addEventListener('click', onCellTap);
-
 
 undoBtn.addEventListener('click', ()=>{
   if (mode==='online') return;
