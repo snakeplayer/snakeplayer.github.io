@@ -18,3 +18,5 @@ Ouvre la **console** : tu verras les logs `[AUTH]`, `[ROOM]`, `[STATE]`, `[MOVE]
 
 
 Hotfix v4.1.2a: remove updateTurnInfo refs; add hidden #turnInfo; guard listener.
+
+Hotfix v4.1.2c: allow selection off-turn; block only on move with logs.
